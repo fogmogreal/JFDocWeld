@@ -1,9 +1,10 @@
 import os
 import shutil
 import sys
-import tempfile
+import threading
 import traceback
-from tkinter import Tk, messagebox
+from tkinter import messagebox
+import customtkinter as ctk
 import requests
 
 USUARIO_GITHUB = "fogmogreal"
@@ -14,17 +15,39 @@ URL_LATEST_RELEASE = f"https://api.github.com/repos/{USUARIO_GITHUB}/{REPOSITORI
 URL_VERSION = f"https://raw.githubusercontent.com/{USUARIO_GITHUB}/{REPOSITORIO}/{BRANCH}/app/version.txt"
 URL_MAIN = f"https://raw.githubusercontent.com/{USUARIO_GITHUB}/{REPOSITORIO}/{BRANCH}/app/main.py"
 
-PASTA_LOCAL = os.path.join(os.getenv("LOCALAPPDATA"), "JFDocWeld")
-ARQUIVO_VERSAO = os.path.join(PASTA_LOCAL, "version.txt")
+PASTA_LOCAL = os.path.join(
+    os.getenv("LOCALAPPDATA") or os.path.expanduser("~"), "JFDocWeld"
+)
+ARQUIVO_VERSION = os.path.join(PASTA_LOCAL, "version.txt")
 ARQUIVO_APP = os.path.join(PASTA_LOCAL, "main.py")
 
+HEADERS_GITHUB = {
+    "User-Agent": f"{REPOSITORIO}-Launcher/1.0",
+    "Accept": "application/vnd.github+json",
+}
 
-def obter_recurso_embutido(nome_arquivo):
+
+def obter_recurso_embutido(nome_arquivo, subpasta_relativa=None):
+    candidatos = []
     if hasattr(sys, "_MEIPASS"):
-        return os.path.join(sys._MEIPASS, nome_arquivo)
-    if os.path.exists(os.path.abspath(nome_arquivo)):
-        return os.path.abspath(nome_arquivo)
-    return os.path.join(os.path.abspath("app"), nome_arquivo)
+        if subpasta_relativa:
+            candidatos.append(
+                os.path.join(sys._MEIPASS, subpasta_relativa, nome_arquivo)
+            )
+        candidatos.append(os.path.join(sys._MEIPASS, nome_arquivo))
+
+    base_script = os.path.dirname(os.path.abspath(__file__))
+    if subpasta_relativa:
+        candidatos.append(
+            os.path.join(base_script, subpasta_relativa, nome_arquivo)
+        )
+    candidatos.append(os.path.join(base_script, nome_arquivo))
+    candidatos.append(os.path.abspath(nome_arquivo))
+
+    for caminho in candidatos:
+        if caminho and os.path.exists(caminho):
+            return caminho
+    return None
 
 
 class SplashAtualizador(ctk.CTk):
@@ -39,8 +62,8 @@ class SplashAtualizador(ctk.CTk):
         self.geometry(f"{largura}x{altura}+{pos_x}+{pos_y}")
 
         caminho_ico = obter_recurso_embutido("jfdocweld.ico")
-        if os.path.exists(caminho_ico):
-            self.after(100, lambda: self.iconbitmap(caminho_ico))
+        if caminho_ico and os.path.exists(caminho_ico):
+            self.after(100, lambda c=caminho_ico: self.iconbitmap(c))
 
         self.frame = ctk.CTkFrame(
             self, corner_radius=12, border_width=1, border_color="#38BDF8"
@@ -74,38 +97,76 @@ class SplashAtualizador(ctk.CTk):
         self._monitorar_progresso()
 
     def _fluxo_inicializacao(self):
-        os.makedirs(PASTA_LOCAL, exist_ok=True)
-        if not os.path.exists(ARQUIVO_APP):
-            shutil.copy2(obter_recurso_embutido("main.py"), ARQUIVO_APP)
-        if not os.path.exists(ARQUIVO_VERSAO):
-            shutil.copy2(obter_recurso_embutido("version.txt"), ARQUIVO_VERSAO)
-
-        with open(ARQUIVO_VERSAO, "r", encoding="utf-8") as f:
-            versao_local = f.read().strip()
-
         try:
-            resp_v = requests.get(URL_VERSAO, timeout=2.5)
-            if resp_v.status_code == 200:
-                versao_remota = resp_v.text.strip()
-                if versao_remota != versao_local:
-                    self.status_texto = f"Atualizando para v{versao_remota}..."
-                    resp_code = requests.get(URL_CODIGO, timeout=6)
-                    if resp_code.status_code == 200:
-                        with open(ARQUIVO_APP, "w", encoding="utf-8") as f:
-                            f.write(resp_code.text)
-                        with open(ARQUIVO_VERSAO, "w", encoding="utf-8") as f:
-                            f.write(versao_remota)
+            os.makedirs(PASTA_LOCAL, exist_ok=True)
+
+            if not os.path.exists(ARQUIVO_APP):
+                origem_app = obter_recurso_embutido("main.py", "app")
+                if origem_app:
+                    shutil.copy2(origem_app, ARQUIVO_APP)
+
+            if not os.path.exists(ARQUIVO_VERSION):
+                origem_ver = obter_recurso_embutido("version.txt", "app")
+                if origem_ver:
+                    shutil.copy2(origem_ver, ARQUIVO_VERSION)
+                else:
+                    with open(ARQUIVO_VERSION, "w", encoding="utf-8") as f:
+                        f.write("1.0.0")
+
+            versao_local = "0.0.0"
+            if os.path.exists(ARQUIVO_VERSION):
+                with open(ARQUIVO_VERSION, "r", encoding="utf-8") as f:
+                    versao_local = f.read().strip()
+
+            try:
+                resp_v = requests.get(
+                    URL_VERSION, headers=HEADERS_GITHUB, timeout=3.0
+                )
+                if resp_v.status_code == 200:
+                    versao_remota = resp_v.text.strip()
+                    if versao_remota and (
+                        versao_remota != versao_local
+                        or not os.path.exists(ARQUIVO_APP)
+                    ):
+                        self.status_texto = (
+                            f"Atualizando para v{versao_remota}..."
+                        )
+                        resp_code = requests.get(
+                            URL_MAIN, headers=HEADERS_GITHUB, timeout=8.0
+                        )
+                        if (
+                            resp_code.status_code == 200
+                            and resp_code.text.strip()
+                        ):
+                            with open(
+                                ARQUIVO_APP, "w", encoding="utf-8"
+                            ) as f:
+                                f.write(resp_code.text)
+                            with open(
+                                ARQUIVO_VERSION, "w", encoding="utf-8"
+                            ) as f:
+                                f.write(versao_remota)
+            except Exception:
+                pass
+
+            self.status_texto = "Abrindo JF DocWeld..."
+        finally:
+            self.concluido = True
+
+    def _fechar_splash(self):
+        try:
+            self.barra.stop()
         except Exception:
             pass
-
-        self.status_texto = "Abrindo JF DocWeld..."
-        self.concluido = True
+        self.quit()
+        self.destroy()
 
     def _monitorar_progresso(self):
+        if not self.winfo_exists():
+            return
         self.lbl_status.configure(text=self.status_texto)
         if self.concluido:
-            self.barra.stop()
-            self.after(200, self.destroy)
+            self.after(200, self._fechar_splash)
         else:
             self.after(100, self._monitorar_progresso)
 
@@ -117,5 +178,25 @@ if __name__ == "__main__":
     splash = SplashAtualizador()
     splash.mainloop()
 
-    with open(ARQUIVO_APP, encoding="utf-8") as f:
-        exec(f.read(), {"__name__": "__main__"})
+    if not os.path.exists(ARQUIVO_APP):
+        messagebox.showerror(
+            "Erro de Inicialização",
+            "Não foi possível localizar o arquivo principal do JF DocWeld.",
+        )
+        sys.exit(1)
+
+    if PASTA_LOCAL not in sys.path:
+        sys.path.insert(0, PASTA_LOCAL)
+
+    try:
+        with open(ARQUIVO_APP, "r", encoding="utf-8") as f:
+            codigo = f.read()
+        exec(
+            compile(codigo, ARQUIVO_APP, "exec"),
+            {"__name__": "__main__", "__file__": ARQUIVO_APP},
+        )
+    except Exception:
+        messagebox.showerror(
+            "Erro no JF DocWeld",
+            f"Ocorreu um erro ao executar o programa:\n\n{traceback.format_exc()}",
+        )
