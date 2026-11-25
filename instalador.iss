@@ -1,7 +1,17 @@
+#if FileExists("app\version.txt")
+  #define VerFile FileOpen("app\version.txt")
+  #define AppVersion Trim(FileRead(VerFile))
+  #expr FileClose(VerFile)
+#endif
+
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
+
 [Setup]
 AppId={{8F4B2C1A-9E3D-4A7B-B5C2-1D8E9F0A3B4C}
 AppName=JF DocWeld
-AppVersion=1.0.0
+AppVersion={#AppVersion}
 AppPublisher=JF Weld
 DefaultDirName={autopf}\JFDocWeld
 DefaultGroupName=JF DocWeld

@@ -1,7 +1,7 @@
 import gc
 import os
-from shutil import which
 import shutil
+from shutil import which
 import subprocess
 import sys
 import tempfile
