@@ -5,7 +5,10 @@ import threading
 import customtkinter as ctk
 import requests
 
-###########
+# ==============================================================================
+URL_VERSAO = "https://raw.githubusercontent.com/fogmogreal/JFDocWeld/refs/heads/main/app/version.txt"
+URL_CODIGO = "https://raw.githubusercontent.com/fogmogreal/JFDocWeld/refs/heads/main/app/main.py"
+# ==============================================================================
 
 PASTA_LOCAL = os.path.join(os.getenv("LOCALAPPDATA"), "JFDocWeld")
 ARQUIVO_VERSAO = os.path.join(PASTA_LOCAL, "version.txt")
