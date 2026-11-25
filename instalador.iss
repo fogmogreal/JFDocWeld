@@ -1,3 +1,9 @@
+#if FileExists("app\version.txt")
+  #define VerFile FileOpen("app\version.txt")
+  #define AppVersion Trim(FileRead(VerFile))
+  #expr FileClose(VerFile)
+#endif
+
 #ifndef AppVersion
   #define AppVersion "1.0.0"
 #endif
