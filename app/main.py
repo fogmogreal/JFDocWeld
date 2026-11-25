@@ -1,6 +1,7 @@
 import gc
 import os
 from shutil import which
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -518,13 +519,13 @@ class JFDocWeldApp(*BaseClass):
 
         reportar(0.25, f"Convertendo {total_pags} página(s) para Word...")
 
-        # Nível 1: pdf2docx com ocr=0 explícito
+        # Nível 1: pdf2docx padrão (sem parâmetro 'ocr' inválido)
         try:
             from pdf2docx import Converter
 
             cv = Converter(entrada)
             try:
-                cv.convert(saida, ocr=0, multi_processing=False)
+                cv.convert(saida, multi_processing=False)
             finally:
                 cv.close()
             if os.path.exists(saida) and os.path.getsize(saida) > 0:
@@ -536,26 +537,35 @@ class JFDocWeldApp(*BaseClass):
         soffice_bin = self._encontrar_libreoffice()
         if soffice_bin:
             reportar(0.55, "Usando motor alternativo (LibreOffice)...")
-            cmd = [
-                soffice_bin,
-                "--headless",
-                "--infilter=writer_pdf_import",
-                "--convert-to",
-                "docx",
-                "--outdir",
-                self.pasta_saida,
-                entrada,
-            ]
-            creation_flags = (
-                subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            )
-            proc = subprocess.run(cmd, creationflags=creation_flags)
-            if (
-                proc.returncode == 0
-                and os.path.exists(saida)
-                and os.path.getsize(saida) > 0
-            ):
-                return
+            pasta_temp_lo = tempfile.mkdtemp(prefix="jfdocweld_lo_")
+            try:
+                cmd = [
+                    soffice_bin,
+                    "--headless",
+                    "--infilter=writer_pdf_import",
+                    "--convert-to",
+                    "docx",
+                    "--outdir",
+                    pasta_temp_lo,
+                    entrada,
+                ]
+                creation_flags = (
+                    subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                )
+                proc = subprocess.run(cmd, creationflags=creation_flags)
+                gerado_lo = os.path.join(
+                    pasta_temp_lo,
+                    os.path.splitext(os.path.basename(entrada))[0] + ".docx",
+                )
+                if (
+                    proc.returncode == 0
+                    and os.path.exists(gerado_lo)
+                    and os.path.getsize(gerado_lo) > 0
+                ):
+                    shutil.move(gerado_lo, saida)
+                    return
+            finally:
+                shutil.rmtree(pasta_temp_lo, ignore_errors=True)
 
         # Nível 3: Motor nativo embutido (PyMuPDF + python-docx preservando estilos e imagens)
         reportar(0.70, "Montando documento Word (motor nativo)...")
@@ -589,7 +599,10 @@ class JFDocWeldApp(*BaseClass):
                 dados_pag = pagina.get_text("dict")
                 blocos = sorted(
                     dados_pag.get("blocks", []),
-                    key=lambda b: (round(b["bbox"][1], 1), round(b["bbox"][0], 1)),
+                    key=lambda b: (
+                        round(b.get("bbox", [0, 0, 0, 0])[1], 1),
+                        round(b.get("bbox", [0, 0, 0, 0])[0], 1),
+                    ),
                 )
 
                 tem_conteudo = False
@@ -599,7 +612,8 @@ class JFDocWeldApp(*BaseClass):
                             ln
                             for ln in bloco.get("lines", [])
                             if "".join(
-                                sp.get("text", "") for sp in ln.get("spans", [])
+                                str(sp.get("text", ""))
+                                for sp in ln.get("spans", [])
                             ).strip()
                         ]
                         if not linhas_validas:
@@ -613,14 +627,14 @@ class JFDocWeldApp(*BaseClass):
                             if idx_ln > 0:
                                 p.add_run(" ")
                             for span in linha.get("spans", []):
-                                txt = span.get("text", "")
+                                txt = str(span.get("text", ""))
                                 if not txt:
                                     continue
                                 run = p.add_run(txt)
                                 tam = span.get("size", 11)
-                                if tam and 6 <= tam <= 72:
-                                    run.font.size = Pt(round(tam, 1))
-                                flags = span.get("flags", 0)
+                                if isinstance(tam, (int, float)) and 6 <= tam <= 72:
+                                    run.font.size = Pt(round(float(tam), 1))
+                                flags = span.get("flags", 0) or 0
                                 run.bold = bool(flags & 16)
                                 run.italic = bool(flags & 2)
                                 cor_int = span.get("color", 0)
@@ -635,7 +649,7 @@ class JFDocWeldApp(*BaseClass):
 
                     elif bloco.get("type") == 1 and bloco.get("image"):
                         tem_conteudo = True
-                        ext_img = bloco.get("ext", "png")
+                        ext_img = str(bloco.get("ext") or "png").strip(".")
                         fd, caminho_tmp = tempfile.mkstemp(
                             suffix=f".{ext_img}"
                         )
@@ -644,7 +658,7 @@ class JFDocWeldApp(*BaseClass):
                             with open(caminho_tmp, "wb") as f_img:
                                 f_img.write(bloco["image"])
                             bbox = bloco.get("bbox", [0, 0, 200, 200])
-                            largura_pt = max(20, bbox[2] - bbox[0])
+                            largura_pt = max(20.0, float(bbox[2]) - float(bbox[0]))
                             largura_pol = min(largura_util, largura_pt / 72.0)
                             documento.add_picture(
                                 caminho_tmp, width=Inches(largura_pol)
@@ -658,7 +672,7 @@ class JFDocWeldApp(*BaseClass):
                                 except OSError:
                                     pass
 
-                # Página escaneada (somente imagem)
+                # Página escaneada ou sem blocos de texto/imagem reconhecidos
                 if not tem_conteudo:
                     pix = pagina.get_pixmap(matrix=matriz, alpha=False)
                     fd, caminho_tmp = tempfile.mkstemp(suffix=".png")
