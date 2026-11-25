@@ -6,8 +6,8 @@ AppPublisher=JF Weld
 DefaultDirName={autopf}\JFDocWeld
 DefaultGroupName=JF DocWeld
 PrivilegesRequired=lowest
-OutputDir=instalador_final
-OutputBaseFilename=Instalador_JF_DocWeld
+OutputDir=Output
+OutputBaseFilename=Setup_JFDocWeld
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -21,12 +21,13 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "dist\JFDocWeld\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\JFDocWeld.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "jfdocweld.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\JF DocWeld"; Filename: "{app}\JFDocWeld.exe"
+Name: "{group}\JF DocWeld"; Filename: "{app}\JFDocWeld.exe"; IconFilename: "{app}\jfdocweld.ico"
 Name: "{group}\Desinstalar JF DocWeld"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\JF DocWeld"; Filename: "{app}\JFDocWeld.exe"; Tasks: desktopicon
+Name: "{autodesktop}\JF DocWeld"; Filename: "{app}\JFDocWeld.exe"; IconFilename: "{app}\jfdocweld.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\JFDocWeld.exe"; Description: "{cm:LaunchProgram,JF DocWeld}"; Flags: nowait postinstall skipifsilent
